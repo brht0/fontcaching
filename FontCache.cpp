@@ -142,7 +142,7 @@ CachedFontGlyph* CachedFont::CreateNewGlyph(char c) {
 
         // glyph could not be loaded or character has no dimensions
         if(!glyph->texture || glyph->w == 0 || glyph->h == 0){
-            if(glyph->texture) delete glyph->texture;
+            if(glyph->texture) SDL_DestroyTexture(glyph->texture);
             delete glyph;
 
             return nullptr;

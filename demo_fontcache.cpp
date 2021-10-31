@@ -14,7 +14,6 @@ const int           fontsize = 30;
 const SDL_Color     fontcolor = {255, 255, 255, 255}; // RGBA
 
 
-
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 
