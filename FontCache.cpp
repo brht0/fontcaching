@@ -1,132 +1,69 @@
 #include "FontCache.h"
 
-CFontNode* CFontMap::operator[](int index){
-    if(index < 0 || index >= map_length)
-        return nullptr;
-
-    CFontNode* node = start;
-
-    while(index > 0){
-        node = node->next;
-        index --;
-    }
-
-    return node;
-}
-
-CFontGlyph CFont::CreateGlyph(char c, CFontGlyphInfo* info){
-    CFontGlyph glyph;
-
-    SDL_Surface* surface = TTF_RenderGlyph_Blended(font, c, color);
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-
-    int w = surface->w;
-    int h = surface->h;
-
-    SDL_FreeSurface(surface);
-
-    glyph.texture = texture;
-
-    SDL_Rect rect = {0, 0, w, h};
-
-    info->rect = rect;
-
-    return glyph;
-}
-
-CFontGlyph* CFont::GetGlyph(char c, CFontGlyphInfo* info){
-    CFontNode* node = nodeMap[c - 0x20];
-
-    *info = node->glyphInfo;
-
-    return &node->glyph;
-}
-
-SDL_Rect CFont::GetTextSize(std::string text){
+SDL_Rect CachedFont::GetTextSize(std::string text){
     SDL_Rect rect = {0, 0, 0, 0};
 
     for(char c : text){
-        CFontGlyphInfo info;
-        GetGlyph(c, &info);
+        CachedFontGlyph* glyph = GetGlyph(c);
+        if(!glyph)
+            continue;
 
-        rect.w += info.rect.w;
-        if(info.rect.h > rect.h)
-            rect.h = info.rect.h;
+        rect.w += glyph->w;
+        rect.h = std::max(rect.h, glyph->h);
     }
+
     return rect;
 }
 
-CFont::CFont(SDL_Renderer* _renderer, const char* _fontfile, int _fontsize, SDL_Color _color)
+CachedFont::CachedFont(SDL_Renderer* _renderer, const char* _fontfile, int _fontsize, SDL_Color _fontcolor, bool load_all)
     : fontfile(_fontfile),
     fontsize(_fontsize),
-    color(_color),
+    fontcolor(_fontcolor),
     renderer(_renderer)
 {
     font = TTF_OpenFont(fontfile, fontsize);
 
-    nodeMap.map_length = 0;
-    nodeMap.start = nullptr;
+    int start = 0;
+    int end = 0xFF;
 
-    CFontNode* fontnode = new CFontNode;
-    CFontGlyphInfo info;
-    fontnode->glyph = CreateGlyph(0x20, &info);
-    fontnode->glyphInfo = info;
-
-    nodeMap.start = fontnode;
-    nodeMap.map_length ++;
-
-    for(int c = 0x21; c <= 0x7E; c++){
-        CFontNode* new_fontnode = new CFontNode;
-        new_fontnode->glyph = CreateGlyph(c, &info);
-        new_fontnode->glyphInfo = info;
-
-        fontnode->next = new_fontnode;
-        new_fontnode->next = nullptr;
-
-        fontnode = new_fontnode;
-
-        nodeMap.map_length ++;
+    if(load_all){
+        for(int c = start; c <= end; c++){
+            glyphMap[c] = CreateNewGlyph(c);
+        }
     }
 }
 
-CFont::~CFont(){
-    CFontNode* node = nodeMap.start;
-    do{
-        if(node){
-            if(node->glyph.texture)
-                node->glyph.texture;
-        }
-        node = node->next;
-    } while(node);
-
+CachedFont::~CachedFont(){
     TTF_CloseFont(font);
 }
 
-void CFont::DrawText(int x, int y, const char* text){
+void CachedFont::DrawText(int x, int y, const char* text){
     int w = 0;
 
+    SDL_Rect src = {0, 0, 0, 0};
     SDL_Rect dst = {x, y, 0, 0};
 
     for(int c = 0; c < strlen(text); c++){
-        CFontGlyphInfo info;
-        CFontGlyph* glyph = GetGlyph(text[c], &info);
+        CachedFontGlyph* glyph = GetGlyph(text[c]);
 
-        dst.w = info.rect.w;
-        dst.h = info.rect.h;
+        if(glyph){
+            src.w = dst.w = glyph->w;
+            src.h = dst.h = glyph->h;
 
-        SDL_RenderCopy(renderer, glyph->texture, &info.rect, &dst);
+            SDL_RenderCopy(renderer, glyph->texture, &src, &dst);
 
-        dst.x += dst.w;
+            dst.x += dst.w;
+        }
     }
 }
 
-void CFont::DrawTextCentered(int center_x, int center_y, const char* text){
+void CachedFont::DrawTextCentered(int center_x, int center_y, const char* text){
     SDL_Rect text_size = GetTextSize(text);
 
     DrawText( center_x - text_size.w / 2, center_y - text_size.h / 2, text);
 }
 
-void CFont::DrawWrappedText(int x, int y, int w, std::string text){
+void CachedFont::DrawWrappedText(int x, int y, int w, std::string text){
     std::string line_buffer = "";
 
     bool first_in_line = true;
@@ -176,5 +113,44 @@ void CFont::DrawWrappedText(int x, int y, int w, std::string text){
 
     if(!line_buffer.empty()){
         DrawText(x, y, line_buffer.c_str());
+    }
+}
+
+CachedFontGlyph* CachedFont::CreateNewGlyph(char c) {
+    CachedFontGlyph* glyph = new CachedFontGlyph;
+
+    SDL_Surface* surface = TTF_RenderGlyph_Blended(font, c, fontcolor);
+    if(surface){
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+        glyph->texture = texture;
+        glyph->w = surface->w;
+        glyph->h = surface->h;
+
+        SDL_FreeSurface(surface);
+
+        if(!glyph->texture || glyph->w == 0 || glyph->h == 0){
+            if(glyph->texture) delete glyph->texture;
+            delete glyph;
+
+            return nullptr;
+        }
+
+        return glyph;
+    }
+
+    return nullptr;
+}
+
+CachedFontGlyph* CachedFont::GetGlyph(char c) {
+    auto it = glyphMap.find(c);
+
+    if(it != glyphMap.end()){
+        return it->second;
+    }
+    else{
+        CachedFontGlyph* glyph = CreateNewGlyph(c);
+        glyphMap[c] = glyph;
+        return glyph;
     }
 }

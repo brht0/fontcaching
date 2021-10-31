@@ -7,52 +7,39 @@
 #include <iostream>
 #include <cstring>
 #include <sstream>
+#include <unordered_map>
+#include <vector>
 
-struct CFontGlyph{
+struct CachedFontGlyph{
     SDL_Texture* texture;
+    int w, h;
 };
 
-struct CFontGlyphInfo{
-    SDL_Rect rect;
-};
-
-struct CFontNode{
-    CFontGlyph glyph;
-    CFontGlyphInfo glyphInfo;
-    CFontNode* next = nullptr;
-};
-
-struct CFontMap{
-    int map_length;
-    CFontNode* start = nullptr;
-
-    CFontNode* operator[](int index);
-};
-
-class CFont{
-private:
-    const char* fontfile;
-    int fontsize;
-    SDL_Color color;
-
-    SDL_Renderer* renderer;
-    TTF_Font* font;
-
-    CFontMap nodeMap;
-
-    CFontGlyph CreateGlyph(char c, CFontGlyphInfo* info);
-
-    CFontGlyph* GetGlyph(char c, CFontGlyphInfo* info);
-
-    SDL_Rect GetTextSize(std::string text);
-
+class CachedFont{
 public:
-    CFont(SDL_Renderer* _renderer, const char* _fontfile, int _fontsize, SDL_Color _color);
-    ~CFont();
+    CachedFont(SDL_Renderer* _renderer, const char* _fontfile, int _fontsize, SDL_Color _fontcolor, bool load_all = true);
+    ~CachedFont();
 
     void DrawText(int x, int y, const char* text);
     void DrawTextCentered(int center_x, int center_y, const char* text);
     void DrawWrappedText(int x, int y, int w, std::string text);
+
+private:
+    std::unordered_map<char, CachedFontGlyph*> glyphMap;
+    CachedFontGlyph* CreateNewGlyph(char c);
+    CachedFontGlyph* GetGlyph(char c);
+
+    SDL_Rect GetTextSize(std::string text);
+
+private:
+    const char* fontfile;
+    int fontsize;
+    SDL_Color fontcolor;
+
+    std::vector<CachedFontGlyph> glyphs;
+    SDL_Renderer* renderer;
+    TTF_Font* font;
+
 };
 
 #endif // __FONTCACHE_H__
