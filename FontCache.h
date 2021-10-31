@@ -1,6 +1,14 @@
 #ifndef __FONTCACHE_H__
 #define __FONTCACHE_H__
 
+/*
+
+todo:
+- newline characters
+- modifyable color
+
+*/
+
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_ttf.h"
 
@@ -20,8 +28,8 @@ public:
     CachedFont(SDL_Renderer* _renderer, const char* _fontfile, int _fontsize, SDL_Color _fontcolor, bool load_all = true);
     ~CachedFont();
 
-    void DrawText(int x, int y, const char* text);
-    void DrawTextCentered(int center_x, int center_y, const char* text);
+    void DrawText(int x, int y, std::string text);
+    void DrawTextCentered(int center_x, int center_y, std::string text);
     void DrawWrappedText(int x, int y, int w, std::string text);
 
 private:

@@ -7,23 +7,57 @@
 
 #include "FontCache.h"
 
+
+// FONT SETTINGS
+const char*         fontname = "verdana.ttf";
+const int           fontsize = 30;
+const SDL_Color     fontcolor = {255, 255, 255, 255}; // RGBA
+
+
+
 const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
+const int SCREEN_HEIGHT = 800;
 
-int main(int, char*[]){
+SDL_Window* window;
+SDL_Renderer* renderer;
+CachedFont* font;
 
-    // Initialize SDL2 stuff
-    SDL_Init(SDL_INIT_VIDEO);
-    TTF_Init();
-    SDL_Window* window = SDL_CreateWindow("Cached Font in SDL2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+bool InitializeDemo(){
+    if(!SDL_Init(SDL_INIT_VIDEO) == -1 || TTF_Init() == -1){
+        return false;
+    }
+
+    window = SDL_CreateWindow("Cached Font in SDL2", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+    if(!window || !renderer){
+        return false;
+    }
 
     // Initialize cached font
-    const char* fontname = "verdana.ttf";
-    int fontsize = 50;
-    SDL_Color fontcolor = {255, 255, 255, 255};
+    font = new CachedFont(renderer, fontname, fontsize, fontcolor, false);
+    if(!font){
+        return false;
+    }
 
-    CachedFont* font = new CachedFont(renderer, fontname, fontsize, fontcolor, false);
+    return true;
+}
+
+void QuitDemo(){
+    // Free font
+    delete font; font = nullptr;
+
+    // Quit SDL2
+    SDL_DestroyRenderer(renderer); renderer = nullptr;
+    SDL_DestroyWindow(window); window = nullptr;
+    TTF_Quit();
+    SDL_Quit();
+}
+
+int main(int, char*[]){
+    if(!InitializeDemo()){
+        return 1;
+    }
 
     // Main loop
     bool quit = false;
@@ -40,28 +74,36 @@ int main(int, char*[]){
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0xFF);
         SDL_RenderClear(renderer);
 
-        // Initialize some strings
+        // Initialize strings
         std::stringstream ss;
         ss << (int)SDL_GetTicks();
-        std::string text = u8"number: " + ss.str();
-        std::string text2 = "This is some text that I just wrote, test test test test test test test test test";
+        std::string text_ticks = u8"SDL_GetTicks() == " + ss.str();
+        std::string text_centered = "Centered text.";
+        for(int i=0; i<(SDL_GetTicks() / 150) % 10; i++){
+            text_centered += '.';
+        }
+        std::string text_wrapped = "This text should be wrapped around this box!";
 
-        // Draw strings on screen buffer with cached font
-        font->DrawText(30, 10, text.c_str());
-        font->DrawWrappedText(0, 70, 800, text2);
+        // Draw strings
+        font->DrawText(30, 10, text_ticks);
+        font->DrawWrappedText(30, 200, 150, text_wrapped);
+        font->DrawTextCentered(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, text_centered);
+
+        // Draw box
+        SDL_Rect rect = {30, 200, 150, 300};
+        SDL_SetRenderDrawColor(renderer, 0xFF, 0, 0, 0xFF);
+        SDL_RenderDrawRect(renderer, &rect);
+        
+        // Draw central axis
+        SDL_SetRenderDrawColor(renderer, 0, 0xFF, 0, 0xFF);
+        SDL_RenderDrawLine(renderer, SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT);
+        SDL_RenderDrawLine(renderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
 
         // Present screen
         SDL_RenderPresent(renderer);
     }
 
-    // Free memory
-    delete font; font = nullptr;
-
-    // Quit SDL2
-    SDL_DestroyRenderer(renderer); renderer = nullptr;
-    SDL_DestroyWindow(window); window = nullptr;
-    TTF_Quit();
-    SDL_Quit();
+    QuitDemo();
 
     return 0;
 }

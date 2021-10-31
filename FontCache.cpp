@@ -22,6 +22,9 @@ CachedFont::CachedFont(SDL_Renderer* _renderer, const char* _fontfile, int _font
     renderer(_renderer)
 {
     font = TTF_OpenFont(fontfile, fontsize);
+    if(!font){
+        std::cout << "Font could not be loaded: " << font << "\n";
+    }
 
     int start = 0;
     int end = 0xFF;
@@ -35,16 +38,26 @@ CachedFont::CachedFont(SDL_Renderer* _renderer, const char* _fontfile, int _font
 
 CachedFont::~CachedFont(){
     TTF_CloseFont(font);
+
+    for(auto x : glyphMap){
+        CachedFontGlyph* glyph = x.second;
+
+        if(glyph){
+            if(glyph->texture)
+                SDL_DestroyTexture(glyph->texture);
+            delete glyph;
+        }
+    }
 }
 
-void CachedFont::DrawText(int x, int y, const char* text){
+void CachedFont::DrawText(int x, int y, std::string text){
     int w = 0;
 
     SDL_Rect src = {0, 0, 0, 0};
     SDL_Rect dst = {x, y, 0, 0};
 
-    for(int c = 0; c < strlen(text); c++){
-        CachedFontGlyph* glyph = GetGlyph(text[c]);
+    for(char c : text){
+        CachedFontGlyph* glyph = GetGlyph(c);
 
         if(glyph){
             src.w = dst.w = glyph->w;
@@ -57,10 +70,10 @@ void CachedFont::DrawText(int x, int y, const char* text){
     }
 }
 
-void CachedFont::DrawTextCentered(int center_x, int center_y, const char* text){
+void CachedFont::DrawTextCentered(int center_x, int center_y, std::string text){
     SDL_Rect text_size = GetTextSize(text);
 
-    DrawText( center_x - text_size.w / 2, center_y - text_size.h / 2, text);
+    DrawText(center_x - text_size.w / 2, center_y - text_size.h / 2, text);
 }
 
 void CachedFont::DrawWrappedText(int x, int y, int w, std::string text){
@@ -92,12 +105,10 @@ void CachedFont::DrawWrappedText(int x, int y, int w, std::string text){
                 line_buffer = line_buffer.substr(0, line_buffer.length() - word.length());
             }
 
-            DrawText(x, y, line_buffer.c_str());
+            DrawText(x, y, line_buffer);
 
             y += line_size.h;
-
             first_in_line = true;
-
             line_buffer.clear();
         }
         else{
@@ -112,7 +123,7 @@ void CachedFont::DrawWrappedText(int x, int y, int w, std::string text){
     }
 
     if(!line_buffer.empty()){
-        DrawText(x, y, line_buffer.c_str());
+        DrawText(x, y, line_buffer);
     }
 }
 
@@ -129,6 +140,7 @@ CachedFontGlyph* CachedFont::CreateNewGlyph(char c) {
 
         SDL_FreeSurface(surface);
 
+        // glyph could not be loaded or character has no dimensions
         if(!glyph->texture || glyph->w == 0 || glyph->h == 0){
             if(glyph->texture) delete glyph->texture;
             delete glyph;
