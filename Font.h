@@ -16,29 +16,30 @@ public:
 
 private:
     static constexpr unsigned maxChar = 256;
-    unsigned texture;
     int w, h;
     SDL_FRect rects[maxChar];
 
     struct Vertex{
         float x, y;
         float tx, ty;
-        float r, g, b;
+        float r, g, b, a;
     };
 
-    unsigned renderProgram, vbo, vao;
-    static const int RENDER_BATCH_SIZE = 128;
+    unsigned texture, program, vbo, vao;
+    static const int RENDER_BATCH_SIZE = 64;
     Vertex vertices[RENDER_BATCH_SIZE * 4];
 
 const char* vert = \
-"#version 430\n"\
+"#version 330 core\n"\
 "\n"\
 "layout(location = 0) in vec2 screenPos;\n"\
 "layout(location = 1) in vec2 texturePos;\n"\
-"layout(location = 2) in vec3 inColor;\n"\
+"layout(location = 2) in vec4 inColor;\n"\
 "\n"\
 "out vec2 outTexturePos;\n"\
-"out vec3 outColor;\n"\
+"out vec4 outColor;\n"\
+"\n"\
+"uniform sampler2D charTexture;\n"\
 "\n"\
 "void main(){\n"\
 "   gl_Position = vec4(screenPos, 0.0, 1.0);\n"\
@@ -48,18 +49,18 @@ const char* vert = \
 "";
 
 const char* frag =\
-"#version 430\n"\
+"#version 330 core\n"\
 "\n"\
 "in vec2 outTexturePos;\n"\
-"in vec3 outColor;\n"\
+"in vec4 outColor;\n"\
 "\n"\
 "out vec4 fragColor;\n"\
 "\n"\
 "uniform sampler2D charTexture;\n"\
 "\n"\
 "void main(){\n"\
-"   vec4 textureColor = texture(charTexture, outTexturePos);\n"\
-"   fragColor = vec4(textureColor.xyz * outColor, 1.0);\n"\
+"   vec4 textureColor = texture2D(charTexture, outTexturePos);\n"\
+"   fragColor = textureColor * outColor;\n"\
 "}\n"\
 "";
 };
@@ -79,7 +80,7 @@ Font::Font(const char* filename, int resolution):
 
     SDL_Surface* surfaces[maxChar];
     for(unsigned c=0; c<maxChar; c++){
-        SDL_Surface* s1 = TTF_RenderGlyph_Shaded(font, c, {0xFF, 0xFF, 0xFF, 0xFF}, {0, 0, 0, 0});
+        SDL_Surface* s1 = TTF_RenderGlyph_Blended(font, c, {0xFF, 0xFF, 0xFF, 0xFF});
         if(!s1){
             surfaces[c] = nullptr;
             rects[c] = {};
@@ -122,13 +123,14 @@ Font::Font(const char* filename, int resolution):
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, (GLubyte*)finalSurface->pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, (uint8_t*)finalSurface->pixels);
+
     glBindTexture(GL_TEXTURE_2D, 0);
     
     SDL_FreeSurface(finalSurface);
 
-    renderProgram = CreateShaderNoFile(vert, frag);
-    // renderProgram = CreateShader("default.vert", "screen.frag");
+    program = CreateShaderNoFile(vert, frag);
     
     glGenBuffers(1, &vbo);
     
@@ -138,9 +140,9 @@ Font::Font(const char* filename, int resolution):
     glEnableVertexArrayAttrib(vao, 0);
     glEnableVertexArrayAttrib(vao, 1);
     glEnableVertexArrayAttrib(vao, 2);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)(0 * sizeof(float)));
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)(2 * sizeof(float)));
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 7 * sizeof(float), (void*)(4 * sizeof(float)));
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(0 * sizeof(float)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(2 * sizeof(float)));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(4 * sizeof(float)));
     glBindVertexArray(0);
 }
 
@@ -149,13 +151,25 @@ void Font::RenderText(std::string text, double x, double y, double textHeight, S
     glfwGetWindowSize(glfwGetCurrentContext(), &screenW, &screenH);
     float aspectRatio = screenH / (float)screenW;
 
+    glUseProgram(program);
+    glActiveTexture(0);
     glBindTexture(GL_TEXTURE_2D, texture);
+    glUniform1f(glGetUniformLocation(program, "charTexture"), 0);
+    glBindVertexArray(vao);
 
-    if(false){
+    int vboCounter = 0;
+    int charCounter = 0;
+
     float vx2 = x;
     for(char c : text){
+        if(c == '\n'){
+            vx2 = x;
+            y -= textHeight * 2.0;
+            continue;
+        }
+
         auto rect = rects[(unsigned char)c];
-        if(rect.w == 0 || rect.h == 0)
+        if(rect.w <= 0 || rect.h <= 0)
             continue;
 
         float tx1 = rect.x / (float)w;
@@ -168,67 +182,31 @@ void Font::RenderText(std::string text, double x, double y, double textHeight, S
         float vy1 = y;
         float vy2 = y + 2.0*textHeight;
 
-        glBegin(GL_QUADS);
-            glColor4f(color.r/(float)256, color.g/(float)256, color.b/(float)256, color.a/(float)256);
-            glTexCoord2f    (tx2, ty2);
-            glVertex2f      (vx2, vy1);
-            glTexCoord2f    (tx1, ty2);
-            glVertex2f      (vx1, vy1);
-            glTexCoord2f    (tx1, ty1);
-            glVertex2f      (vx1, vy2);
-            glTexCoord2f    (tx2, ty1);
-            glVertex2f      (vx2, vy2);
-        glEnd();
-    }
-    }
-    else{
-        int vboCounter = 0;
-        int charCounter = 0;
+        Vertex v1 = {vx2, vy1, tx2, ty2, color.r/(float)256, color.g/(float)256, color.b/(float)256, color.a/(float)256};
+        Vertex v2 = {vx1, vy1, tx1, ty2, color.r/(float)256, color.g/(float)256, color.b/(float)256, color.a/(float)256};
+        Vertex v3 = {vx1, vy2, tx1, ty1, color.r/(float)256, color.g/(float)256, color.b/(float)256, color.a/(float)256};
+        Vertex v4 = {vx2, vy2, tx2, ty1, color.r/(float)256, color.g/(float)256, color.b/(float)256, color.a/(float)256};
 
-        float vx2 = x;
-        for(char c : text){
-            auto rect = rects[(unsigned char)c];
-            if(rect.w <= 0 || rect.h <= 0)
-                continue;
+        vertices[vboCounter++] = v1;
+        vertices[vboCounter++] = v2;
+        vertices[vboCounter++] = v3;
+        vertices[vboCounter++] = v4;
 
-            float tx1 = rect.x / (float)w;
-            float ty1 = rect.y / (float)h;
-            float tx2 = (rect.x + rect.w) / (float)w;
-            float ty2 = (rect.y + rect.h) / (float)h;
+        charCounter ++;
+        if(charCounter >= RENDER_BATCH_SIZE){
+            glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
 
-            float vx1 = vx2;
-            vx2 += (rect.w * (2.0*textHeight / rect.h)) * aspectRatio;
-            float vy1 = y;
-            float vy2 = y + 2.0*textHeight;
+            glDrawArrays(GL_QUADS, 0, RENDER_BATCH_SIZE * 4);
 
-            Vertex v1 = {vx2, vy1, tx2, ty2, color.r/(float)256, color.g/(float)256, color.b/(float)256};
-            Vertex v2 = {vx1, vy1, tx1, ty2, color.r/(float)256, color.g/(float)256, color.b/(float)256};
-            Vertex v3 = {vx1, vy2, tx1, ty1, color.r/(float)256, color.g/(float)256, color.b/(float)256};
-            Vertex v4 = {vx2, vy2, tx2, ty1, color.r/(float)256, color.g/(float)256, color.b/(float)256};
-
-            // Vertex v1 = {vx1, vy1, tx1, ty1};
-            // Vertex v2 = {vx1, vy2, tx1, ty2};
-            // Vertex v3 = {vx2, vy2, tx2, ty2};
-            // Vertex v4 = {vx2, vy1, tx2, ty1};
-
-            vertices[vboCounter++] = v1;
-            vertices[vboCounter++] = v2;
-            vertices[vboCounter++] = v3;
-            vertices[vboCounter++] = v4;
-
-            charCounter ++;
-            if(charCounter >= RENDER_BATCH_SIZE)
-                break;
+            charCounter = 0;
+            vboCounter = 0;
         }
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
-
-        glUseProgram(renderProgram);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_QUADS, 0, RENDER_BATCH_SIZE);
-        glBindVertexArray(0);
     }
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
+    glDrawArrays(GL_QUADS, 0, charCounter*4);
 
+    glBindVertexArray(0);
+    glUseProgram(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
