@@ -11,9 +11,7 @@ int main(int argc, char** argv){
     glfwInit();
     GLFWwindow* window = glfwCreateWindow(500, 400, "Fonts", 0, 0);
     glfwMakeContextCurrent(window);
-    glEnable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+    glEnable(GL_DEPTH_TEST);
 
     // Initialize font
     const char* fontfile = argv[1];
@@ -22,7 +20,7 @@ int main(int argc, char** argv){
 
     while(!glfwWindowShouldClose(window)){
         glClearColor(0.2, 0.1, 0.5, 1.0);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Demo font rendering
         std::string text = "Time: ";
@@ -34,8 +32,9 @@ int main(int argc, char** argv){
         if(gibberish.length() > 70) gibberish.clear();
         font->RenderText(text, -1.0, -1.0, 0.1, {0xFF, 0xFF, 0xFF, 0xFF});
         font->RenderText("Hello world!", -0.75, -0.1, 0.15, {0xFF, 0, 0, uint8_t(0xFF/2 + 0xFF/2*sin(10.0*glfwGetTime()))});
+        // font->RenderText("Hello world!", -0.75, -0.1, 0.15, {0xFF, 0, 0});
         font->RenderText(gibberish, -1.0, 0.8, 0.05, {0, 0xFF, 0, 0xFF});
-        
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
